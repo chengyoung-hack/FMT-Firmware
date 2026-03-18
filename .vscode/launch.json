@@ -1,127 +1,144 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SIEON S1 J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/sieon/s1/build/fmt_sieon-s1.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32H743II",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/sieon/s1/STM32H7x3.svd",
+      "runToMain": true
+    },
+    {
+      "name": "FMUv5 Debug J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/pixhawk/fmu-v5/build/fmt_pixhawk-fmuv5.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32F765II",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/pixhawk/fmu-v5/STM32F7x5.svd",
+      "runToMain": true
+    },
+    {
+      "name": "CUAV V5+ Debug J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/cuav/v5_plus/build/fmt_cuav-v5+.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32F765II",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/cuav/v5_plus/STM32F7x5.svd",
+      "runToMain": true
+    },
+    {
+      "name": "CUAV V5-Nano Debug J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/cuav/v5_nano/build/fmt_cuav-v5_nano.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32F765II",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/cuav/v5_nano/STM32F7x5.svd",
+      "runToMain": true
+    },
+    {
+      "name": "CUAV 7-Nano J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/cuav/7_nano/build/fmt_cuav-7_nano.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32H753II",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/cuav/7_nano/STM32H7x3.svd",
+      "runToMain": true
+    },
+    {
+      "name": "FMUv2 Debug J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/pixhawk/fmu-v2/build/fmt_pixhawk-fmuv2.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32F427VI",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/pixhawk/fmu-v2/STM32F427.svd",
+      "runToMain": true
+    },
+    {
+      "name": "ICF5 Debug J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/amov/icf5/build/fmt_amov-icf5.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "GD32F470VG",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/amov/icf5/GD32F4xx.svd",
+      "runToMain": true
+    },
+    {
+      "name": "X1 Debug J-Link",
+      "type": "cortex-debug",
+      "request": "launch",
+      "cwd": "${workspaceRoot}",
+      "executable": "target/yundrone/x1/build/fmt_yundrone-x1.elf",
+      "serverpath": "${env:JLINK_SERVER}",
+      "servertype": "jlink",
+      "device": "STM32H743II",
+      "interface": "swd",
+      "armToolchainPath": "${env:RTT_EXEC_PATH}",
+      "serialNumber": "",
+      "svdFile": "target/yundrone/x1/STM32H7x3.svd",
+      "runToMain": true
+    },
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "cppdbg",
+      "request": "launch",
+      "args": [],
+      "stopAtEntry": false,
+      "externalConsole": true,
+      "cwd": "c:/Users/cheng/OneDrive/temp_git_workspace/FMT-Firmware-github/target/amov/icf5/drivers",
+      "program": "c:/Users/cheng/OneDrive/temp_git_workspace/FMT-Firmware-github/target/amov/icf5/drivers/build/Debug/outDebug",
+      "MIMode": "gdb",
+      "miDebuggerPath": "gdb",
+      "setupCommands": [
         {
-            "name": "SIEON S1 J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/sieon/s1/build/fmt_sieon-s1.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32H743II",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/sieon/s1/STM32H7x3.svd",
-            "runToMain": true
-        },{
-            "name": "FMUv5 Debug J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/pixhawk/fmu-v5/build/fmt_pixhawk-fmuv5.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32F765II",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/pixhawk/fmu-v5/STM32F7x5.svd",
-            "runToMain": true
-        },
-        {
-            "name": "CUAV V5+ Debug J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/cuav/v5_plus/build/fmt_cuav-v5+.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32F765II",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/cuav/v5_plus/STM32F7x5.svd",
-            "runToMain": true
-        },
-        {
-            "name": "CUAV V5-Nano Debug J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/cuav/v5_nano/build/fmt_cuav-v5_nano.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32F765II",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/cuav/v5_nano/STM32F7x5.svd",
-            "runToMain": true
-        },
-        {
-            "name": "CUAV 7-Nano J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/cuav/7_nano/build/fmt_cuav-7_nano.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32H753II",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/cuav/7_nano/STM32H7x3.svd",
-            "runToMain": true
-        },
-        {
-            "name": "FMUv2 Debug J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/pixhawk/fmu-v2/build/fmt_pixhawk-fmuv2.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32F427VI",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/pixhawk/fmu-v2/STM32F427.svd",
-            "runToMain": true
-        },
-        {
-            "name": "ICF5 Debug J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/amov/icf5/build/fmt_amov-icf5.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "GD32F470VG",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/amov/icf5/GD32F4xx.svd",
-            "runToMain": true
-        },
-        {
-            "name": "X1 Debug J-Link",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceRoot}",
-            "executable": "target/yundrone/x1/build/fmt_yundrone-x1.elf",
-            "serverpath": "${env:JLINK_SERVER}",
-            "servertype": "jlink",
-            "device": "STM32H743II",
-            "interface": "swd",
-            "armToolchainPath": "${env:RTT_EXEC_PATH}",
-            "serialNumber": "", //If you have more than one J-Link probe, add the serial number here.
-            "svdFile": "target/yundrone/x1/STM32H7x3.svd",
-            "runToMain": true
-        },
-    ]
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    }
+  ]
 }

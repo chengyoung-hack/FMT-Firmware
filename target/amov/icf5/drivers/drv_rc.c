@@ -19,6 +19,7 @@
 #include "hal/rc/ppm.h"
 #include "hal/rc/rc.h"
 #include "hal/rc/sbus.h"
+#include "hal/rc/crsf.h"
 
 #ifndef min // mod by prife
     #define min(x, y) (x < y ? x : y)
@@ -39,7 +40,7 @@
 
 static ppm_decoder_t  ppm_decoder;
 static sbus_decoder_t sbus_decoder;
-
+static crsf_decoder_t crsf_decoder;
 void TIMER0_BRK_TIMER8_IRQHandler(void)
 {
     /* enter interrupt */
@@ -77,7 +78,41 @@ void USART5_IRQHandler(void)
         /* Clear RXNE interrupt flag */
         usart_flag_clear(USART5, USART_FLAG_RBNE);
     }
+    /* leave interrupt */
+    rt_interrupt_leave();
+}
 
+void USART0_IRQHandler(void)
+{
+    uint8_t ch;
+    /* enter interrupt */
+    rt_interrupt_enter();
+    if (usart_interrupt_flag_get(USART0, USART_INT_FLAG_RBNE_ORERR) == SET)
+    {
+        if (usart_flag_get(USART0, USART_FLAG_ORERR) == SET) {
+            // 读空数据寄存器（即使数据无效）
+            while (usart_flag_get(USART0, USART_FLAG_RBNE) == SET) {
+                (void)usart_data_receive(USART0);
+            }
+            usart_flag_clear(USART0, USART_FLAG_ORERR);
+        }
+
+    }
+    else if ((usart_interrupt_flag_get(USART0, USART_INT_FLAG_RBNE) != RESET)) {
+        while (usart_flag_get(USART0, USART_FLAG_RBNE) != RESET) {
+            ch = (uint8_t)usart_data_receive(USART0);
+            // 默认处理 crsf
+            crsf_input(&crsf_decoder, &ch, 1);
+        }
+
+
+        // CRSF 通常无“锁定”概念，或由 crsf_update 内部处理
+        crsf_update(&crsf_decoder);
+        
+
+        /* Clear RXNE interrupt flag */
+        usart_flag_clear(USART0, USART_FLAG_RBNE);
+    }
     /* leave interrupt */
     rt_interrupt_leave();
 }
@@ -175,6 +210,39 @@ static rt_err_t sbus_lowlevel_init(void)
     return RT_EOK;
 }
 
+static rt_err_t crsf_lowlevel_init(void)
+{
+    /* initialize gpio */
+
+    /* enable gpio clock */
+    rcu_periph_clock_enable(RCU_GPIOB);
+    rcu_periph_clock_enable(RCU_USART0);
+
+    /* connect port to USARTx_Rx */
+    gpio_af_set(GPIOB, GPIO_AF_7, GPIO_PIN_7);
+    /* configure USART Rx as alternate function push-pull */
+    gpio_mode_set(GPIOB, GPIO_MODE_AF, GPIO_PUPD_PULLUP, GPIO_PIN_7);
+    gpio_output_options_set(GPIOB, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_7);
+
+    /* config usart */
+
+    /* 420000bps, even parity, two stop bits */
+    usart_baudrate_set(USART0, 420000);
+    usart_word_length_set(USART0, USART_WL_8BIT);
+    usart_stop_bit_set(USART0, USART_STB_1BIT);
+    usart_parity_config(USART0, USART_PM_NONE);
+    usart_receive_config(USART0, USART_RECEIVE_ENABLE);
+    usart_transmit_config(USART0, USART_TRANSMIT_ENABLE); // TODO, need sbus output?
+    usart_enable(USART0);
+
+    /* initialize isr */
+    nvic_irq_enable(USART0_IRQn, 1, 1);
+    /* enable interrupt */
+    usart_interrupt_enable(USART0, USART_INT_RBNE);
+
+    return RT_EOK;
+}
+
 static rt_err_t rc_control(rc_dev_t rc, int cmd, void* arg)
 {
     switch (cmd) {
@@ -185,6 +253,8 @@ static rt_err_t rc_control(rc_dev_t rc, int cmd, void* arg)
             updated = sbus_data_ready(&sbus_decoder);
         } else if (rc->config.protocol == RC_PROTOCOL_PPM) {
             updated = ppm_data_ready(&ppm_decoder);
+        } else if (rc->config.protocol == RC_PROTOCOL_CRSF) {
+            updated = crsf_data_ready(&crsf_decoder);
         }
 
         *(uint8_t*)arg = updated;
@@ -234,6 +304,21 @@ static rt_uint16_t rc_read(rc_dev_t rc, rt_uint16_t chan_mask, rt_uint16_t* chan
         ppm_data_clear(&ppm_decoder);
 
         ppm_unlock(&ppm_decoder);
+    } else if (rc->config.protocol == RC_PROTOCOL_CRSF) {
+        if (crsf_data_ready(&crsf_decoder) == 0) {
+            /* no data received, just return */
+            return 0;
+        }
+
+        crsf_lock(&crsf_decoder);
+
+        for (uint8_t i = 0; i < min(rc->config.channel_num, crsf_decoder.rc_count); i++) {
+            *(index++) = crsf_decoder.crsf_val[i];
+            rb += 2;
+        }
+        crsf_data_clear(&crsf_decoder);
+
+        crsf_unlock(&crsf_decoder);
     }
 
     return rb;
@@ -260,6 +345,9 @@ rt_err_t drv_rc_init(void)
 
     RT_TRY(sbus_lowlevel_init());
     RT_TRY(sbus_decoder_init(&sbus_decoder));
+
+    RT_TRY(crsf_lowlevel_init());//
+    RT_TRY(crsf_decoder_init(&crsf_decoder));
 
     RT_CHECK(hal_rc_register(&rc_dev, "rc", RT_DEVICE_FLAG_RDWR, NULL));
 

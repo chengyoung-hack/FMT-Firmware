@@ -105,6 +105,13 @@ static rt_err_t hal_rc_control(struct rt_device* dev, int cmd, void* args)
                it's only allowed to switch once while powered-on */
             uint8_t updated = 0;
 
+            /* Check crsf availability */
+            if(updated == 0)
+            {
+                rc->config.protocol = RC_PROTOCOL_CRSF;
+                rc->ops->rc_control(rc, RC_CMD_CHECK_UPDATE, &updated);
+            }
+
             /* Check sbus availability */
             if (updated == 0) {
                 rc->config.protocol = RC_PROTOCOL_SBUS;
@@ -123,7 +130,7 @@ static rt_err_t hal_rc_control(struct rt_device* dev, int cmd, void* args)
             }
 
             *(uint8_t*)args = updated;
-        } else if (rc->config.protocol == RC_PROTOCOL_SBUS || rc->config.protocol == RC_PROTOCOL_PPM) {
+        } else if (rc->config.protocol == RC_PROTOCOL_SBUS || rc->config.protocol == RC_PROTOCOL_PPM || rc->config.protocol == RC_PROTOCOL_CRSF) {
             return rc->ops->rc_control(rc, cmd, args);
         } else {
             *(uint8_t*)args = 0;

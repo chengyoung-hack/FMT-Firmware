@@ -29,6 +29,7 @@ extern "C" {
 #define RC_PROTOCOL_AUTO 0
 #define RC_PROTOCOL_SBUS 1
 #define RC_PROTOCOL_PPM  2
+#define RC_PROTOCOL_CRSF 3
 
 #define RC_MASK_1  0x0001
 #define RC_MASK_2  0x0002

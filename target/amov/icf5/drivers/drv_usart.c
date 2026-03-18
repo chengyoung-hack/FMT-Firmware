@@ -25,7 +25,7 @@
 #define UART_ENABLE_IRQ(n)  NVIC_EnableIRQ((n))
 #define UART_DISABLE_IRQ(n) NVIC_DisableIRQ((n))
 
-#define USING_UART0
+// #define USING_UART0
 #define USING_UART1
 #define USING_UART2
 #define USING_UART6

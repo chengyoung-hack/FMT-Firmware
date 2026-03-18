@@ -17,7 +17,21 @@ if os.getenv('RTT_CC'):
 # EXEC_PATH is the compiler execute path, for example, CodeSourcery, Keil MDK, IAR
 if CROSS_TOOL == 'gcc':
     PLATFORM = 'gcc'
-    EXEC_PATH = 'your-compiler-path'
+    import shutil
+    from pathlib import Path
+    
+    if os.getenv('RTT_EXEC_PATH'):
+        EXEC_PATH = os.getenv('RTT_EXEC_PATH')
+    else:
+        try:
+            # 尝试从 PATH 中查找编译器位置
+            gcc_path = shutil.which('arm-none-eabi-gcc')
+            if gcc_path:
+                EXEC_PATH = str(Path(gcc_path).parent)
+            else:
+                EXEC_PATH = ''
+        except:
+            EXEC_PATH = ''
 else:
     print('================ERROR============================')
     print('Not support %s yet!' % CROSS_TOOL)
