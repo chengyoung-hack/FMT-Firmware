@@ -106,7 +106,7 @@ void USART0_IRQHandler(void)
         }
 
 
-        // CRSF 通常无“锁定”概念，或由 crsf_update 内部处理
+        /* 更新 crsf 解码器以检查帧超时 */
         crsf_update(&crsf_decoder);
         
 

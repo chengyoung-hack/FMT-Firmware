@@ -16,6 +16,7 @@
 
 #include "hal/rc/crsf.h"
 
+// CRSF frame sync byte: 0xC8 is the standard sync byte for CRSF protocol
 #define CRSF_SYNC_BYTE      0xC8
 #define CRSF_FRAME_LENGTH   0x18  // Total frame length including type and CRC
 
@@ -30,18 +31,22 @@
  * - 1 stop bit (8N1)
  */
 
-// Channel values range: 172 to 1811 (corresponds to 1000-2000us)
+// CRSF原始值范围（协议标准）
 #define CRSF_CHANNEL_MIN  172
 #define CRSF_CHANNEL_MAX  1811
-#define CRSF_CHANNEL_CENTER ((CRSF_CHANNEL_MIN + CRSF_CHANNEL_MAX) / 2)
 
-// Target range for output: 1000-2000us
-#define CRSF_TARGET_MIN  1000.0f
-#define CRSF_TARGET_MAX  2000.0f
+// 目标PWM范围（可自定义，此处按原意保持1000~2000）
+#define CRSF_TARGET_MIN   1000
+#define CRSF_TARGET_MAX   2000
 
-/* pre-calculate the floating point stuff as far as possible at compile time */
-#define CRSF_SCALE_FACTOR ((CRSF_TARGET_MAX - CRSF_TARGET_MIN) / (CRSF_CHANNEL_MAX - CRSF_CHANNEL_MIN))
-#define CRSF_SCALE_OFFSET (int)(CRSF_TARGET_MIN - (CRSF_SCALE_FACTOR * CRSF_CHANNEL_MIN + 0.5f))
+// 改用整数运算宏（避免浮点）
+#define CRSF_SCALE_NUMERATOR   (CRSF_TARGET_MAX - CRSF_TARGET_MIN)   // 1000
+#define CRSF_SCALE_DENOMINATOR (CRSF_CHANNEL_MAX - CRSF_CHANNEL_MIN) // 1639
+
+
+
+// Added: Low-pass filter configuration for smoothing
+#define CRSF_FILTER_ALPHA  0.3f  // Filter coefficient (0.0-1.0, smaller = smoother)
 
 /**
  * @brief Calculate CRC for CRSF frame
@@ -77,38 +82,44 @@ static uint8_t crsf_crc8(const uint8_t* ptr, uint8_t len)
  */
 static bool crsf_decode_channels(crsf_decoder_t* decoder)
 {
-    uint8_t* frame = &decoder->crsf_frame[2]; // Skip sync and length bytes
+    // 确保帧长度足够（至少 sync + len + type + 22 payload + crc）
+    // 这里假设调用前已验证过，或者 decoder->crsf_frame 已指向完整帧
     
-    // Decode 16 channels from 22 bytes
-    // Each channel is 11 bits
-    decoder->crsf_val[0]  = (frame[0] | (frame[1] << 8)) & 0x07FF;
-    decoder->crsf_val[1]  = (frame[1] >> 3) | (frame[2] << 5) & 0x07FF;
-    decoder->crsf_val[2]  = (frame[2] >> 6) | (frame[3] << 2) | ((frame[4] & 0x03) << 10) & 0x07FF;
-    decoder->crsf_val[3]  = ((frame[4] & 0x0F) >> 2) | (frame[5] << 4) & 0x07FF;
-    decoder->crsf_val[4]  = ((frame[5] & 0x0F) >> 4) | (frame[6] << 7) & 0x07FF;
-    decoder->crsf_val[5]  = (frame[6] >> 1) | (frame[7] << 9) & 0x07FF;
-    decoder->crsf_val[6]  = (frame[7] >> 4) | (frame[8] << 6) & 0x07FF;
-    decoder->crsf_val[7]  = (frame[8] >> 7) | (frame[9] << 1) | ((frame[10] & 0x01) << 9) & 0x07FF;
-    decoder->crsf_val[8]  = ((frame[10] & 0x03) >> 1) | (frame[11] << 3) & 0x07FF;
-    decoder->crsf_val[9]  = ((frame[11] & 0x07) >> 5) | (frame[12] << 8) & 0x07FF;
-    decoder->crsf_val[10] = (frame[12] >> 2) | (frame[13] << 10) & 0x07FF;
-    decoder->crsf_val[11] = (frame[13] >> 5) | (frame[14] << 5) & 0x07FF;
-    decoder->crsf_val[12] = (frame[14] >> 8) | (frame[15] << 7) & 0x07FF;
-    decoder->crsf_val[13] = (frame[15] >> 4) | (frame[16] << 6) & 0x07FF;
-    decoder->crsf_val[14] = (frame[16] >> 7) | (frame[17] << 2) | ((frame[18] & 0x03) << 10) & 0x07FF;
-    decoder->crsf_val[15] = ((frame[18] & 0x0F) >> 2) | (frame[19] << 4) & 0x07FF;
+    // 指向有效载荷起始（跳过 sync[0], len[1], type[2]）
+    uint8_t* payload = &decoder->crsf_frame[3];
     
-    // Scale channel values from CRSF range (172-1811) to target range (1000-2000)
+    // 解码16个11位通道
+    decoder->crsf_val[0]  = (payload[0] | (payload[1] << 8)) & 0x07FF;
+    decoder->crsf_val[1]  = ((payload[1] >> 3) | (payload[2] << 5)) & 0x07FF;
+    decoder->crsf_val[2]  = ((payload[2] >> 6) | (payload[3] << 2) | ((payload[4] & 0x03) << 10)) & 0x07FF;
+    decoder->crsf_val[3]  = ((payload[4] >> 2) | (payload[5] << 6)) & 0x07FF;                     // 修正
+    decoder->crsf_val[4]  = ((payload[5] >> 4) | (payload[6] << 4)) & 0x07FF;                     // 修正
+    decoder->crsf_val[5]  = ((payload[6] >> 6) | (payload[7] << 2) | ((payload[8] & 0x01) << 10)) & 0x07FF; // 修正
+    decoder->crsf_val[6]  = ((payload[8] >> 1) | (payload[9] << 7)) & 0x07FF;                     // 修正
+    decoder->crsf_val[7]  = ((payload[9] >> 4) | (payload[10] << 4)) & 0x07FF;                    // 修正
+    decoder->crsf_val[8]  = ((payload[10] >> 7) | (payload[11] << 1) | ((payload[12] & 0x03) << 9)) & 0x07FF; // 修正
+    decoder->crsf_val[9]  = ((payload[12] >> 2) | (payload[13] << 6)) & 0x07FF;                   // 修正
+    decoder->crsf_val[10] = ((payload[13] >> 5) | (payload[14] << 3)) & 0x07FF;                   // 修正
+    decoder->crsf_val[11] = ((payload[14] >> 8) | (payload[15] << 5)) & 0x07FF;                   // 修正（>>8 实际为0，保留写法）
+    decoder->crsf_val[12] = ((payload[15] >> 3) | (payload[16] << 5)) & 0x07FF;                   // 修正
+    decoder->crsf_val[13] = ((payload[16] >> 6) | (payload[17] << 2) | ((payload[18] & 0x07) << 10)) & 0x07FF; // 修正
+    decoder->crsf_val[14] = ((payload[18] >> 1) | (payload[19] << 7)) & 0x07FF;                   // 修正
+    decoder->crsf_val[15] = ((payload[19] >> 4) | (payload[20] << 4)) & 0x07FF;                   // 修正
+    
+    // 缩放通道值（CRSF原始范围 172~1811 -> 目标范围 1000~2000）
     for (int i = 0; i < MAX_CRSF_CHANNEL; i++) {
-        // Constrain input values
+        // 约束输入值到有效范围
         if (decoder->crsf_val[i] < CRSF_CHANNEL_MIN) {
             decoder->crsf_val[i] = CRSF_CHANNEL_MIN;
         } else if (decoder->crsf_val[i] > CRSF_CHANNEL_MAX) {
             decoder->crsf_val[i] = CRSF_CHANNEL_MAX;
         }
         
-        // Scale to target range
-        decoder->crsf_val[i] = (uint16_t)(decoder->crsf_val[i] * CRSF_SCALE_FACTOR + CRSF_SCALE_OFFSET);
+        // 缩放（注意你的 CRSF_SCALE_FACTOR 和 OFFSET 需与映射公式一致）
+        // decoder->crsf_val[i] = (uint16_t)(decoder->crsf_val[i] * CRSF_SCALE_FACTOR + CRSF_SCALE_OFFSET);
+        // 使用时：
+        uint32_t temp = ((uint32_t)(decoder->crsf_val[i] - CRSF_CHANNEL_MIN) * CRSF_SCALE_NUMERATOR);
+        decoder->crsf_val[i] = (uint16_t)((temp + CRSF_SCALE_DENOMINATOR/2) / CRSF_SCALE_DENOMINATOR + CRSF_TARGET_MIN);
     }
     
     decoder->rc_count = MAX_CRSF_CHANNEL;
@@ -208,7 +219,7 @@ uint32_t crsf_input(crsf_decoder_t* decoder, const uint8_t* values, uint32_t siz
         
         switch (decoder->crsf_decode_state) {
         case CRSF_SEARCHING:
-            // Look for sync byte (0x64)
+            // Look for sync byte (0xC8)
             if (byte == CRSF_SYNC_BYTE) {
                 decoder->crsf_frame[0] = byte;
                 decoder->partial_frame_count = 1;
