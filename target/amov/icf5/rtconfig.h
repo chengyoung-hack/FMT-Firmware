@@ -182,4 +182,7 @@
 /* USING C++ */
 #define RT_USING_CPLUSPLUS
 
+/* Enable DShot protocol support */
+#define RT_USING_DSHOT
+
 #endif

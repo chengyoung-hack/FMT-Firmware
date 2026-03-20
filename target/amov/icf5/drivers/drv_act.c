@@ -46,38 +46,50 @@
 #define DSHOT_DMA_BUF_SIZE        18  /* 16位数据 + 2个停止位 */
 #define DSHOT_CMD_MOTOR_STOP      0
 
+/* DShot channel configuration structure */
+typedef struct {
+    uint32_t tim_periph;      /* Timer peripheral (TIMER0, TIMER1, TIMER3) */
+    uint16_t tim_channel;     /* Timer channel (TIMER_CH_0, TIMER_CH_1, etc.) */
+    uint32_t gpio_port;       /* GPIO port (GPIOA, GPIOB, GPIOD, GPIOE) */
+    uint32_t gpio_pin;        /* GPIO pin */
+    uint32_t gpio_af;         /* GPIO alternate function */
+    uint32_t dma_periph;      /* DMA peripheral (DMA0) */
+    dma_channel_enum dma_channel; /* DMA channel */
+} dshot_channel_t;
+
 /* DShot data structures - must be global for interrupt handlers */
+/* Note: DMA_CH1, CH3, CH5, CH6 are used by USART, so we only use CH2, CH4, CH7 for DShot */
 static const dshot_channel_t dshot_config[MAX_PWM_OUT_CHAN] = {
     /* Channel 0: PE9 - TIMER0 CH0 - DMA0_CH2 */
-    { TIMER0, TIMER_CH_0, GPIOE, GPIO_PIN_9, GPIO_AF_1, DMA0, DMA_CH2, DMA_SUBPERI6 },
+    { TIMER0, TIMER_CH_0, GPIOE, GPIO_PIN_9, GPIO_AF_1, DMA0, DMA_CH2 },
     /* Channel 1: PE11 - TIMER0 CH1 - DMA0_CH2 */
-    { TIMER0, TIMER_CH_1, GPIOE, GPIO_PIN_11, GPIO_AF_1, DMA0, DMA_CH2, DMA_SUBPERI6 },
+    { TIMER0, TIMER_CH_1, GPIOE, GPIO_PIN_11, GPIO_AF_1, DMA0, DMA_CH2 },
     /* Channel 2: PE13 - TIMER0 CH2 - DMA0_CH4 */
-    { TIMER0, TIMER_CH_2, GPIOE, GPIO_PIN_13, GPIO_AF_1, DMA0, DMA_CH4, DMA_SUBPERI6 },
+    { TIMER0, TIMER_CH_2, GPIOE, GPIO_PIN_13, GPIO_AF_1, DMA0, DMA_CH4 },
     /* Channel 3: PE14 - TIMER0 CH3 - DMA0_CH4 */
-    { TIMER0, TIMER_CH_3, GPIOE, GPIO_PIN_14, GPIO_AF_1, DMA0, DMA_CH4, DMA_SUBPERI6 },
-    /* Channel 4: PD13 - TIMER3 CH1 - DMA0_CH6 */
-    { TIMER3, TIMER_CH_1, GPIOD, GPIO_PIN_13, GPIO_AF_2, DMA0, DMA_CH6, DMA_SUBPERI6 },
-    /* Channel 5: PD14 - TIMER3 CH2 - DMA0_CH6 */
-    { TIMER3, TIMER_CH_2, GPIOD, GPIO_PIN_14, GPIO_AF_2, DMA0, DMA_CH6, DMA_SUBPERI6 },
+    { TIMER0, TIMER_CH_3, GPIOE, GPIO_PIN_14, GPIO_AF_1, DMA0, DMA_CH4 },
+    /* Channel 4: PD13 - TIMER3 CH1 - DMA0_CH7 */
+    { TIMER3, TIMER_CH_1, GPIOD, GPIO_PIN_13, GPIO_AF_2, DMA0, DMA_CH7 },
+    /* Channel 5: PD14 - TIMER3 CH2 - DMA0_CH7 */
+    { TIMER3, TIMER_CH_2, GPIOD, GPIO_PIN_14, GPIO_AF_2, DMA0, DMA_CH7 },
     /* Channel 6: PA3 - TIMER1 CH3 - DMA0_CH7 */
-    { TIMER1, TIMER_CH_3, GPIOA, GPIO_PIN_3, GPIO_AF_1, DMA0, DMA_CH7, DMA_SUBPERI6 },
+    { TIMER1, TIMER_CH_3, GPIOA, GPIO_PIN_3, GPIO_AF_1, DMA0, DMA_CH7 },
     /* Channel 7: PA15 - TIMER1 CH0 - DMA0_CH7 */
-    { TIMER1, TIMER_CH_0, GPIOA, GPIO_PIN_15, GPIO_AF_1, DMA0, DMA_CH7, DMA_SUBPERI6 },
-    /* Channel 8: PD15 - TIMER3 CH3 - DMA0_CH5 */
-    { TIMER3, TIMER_CH_3, GPIOD, GPIO_PIN_15, GPIO_AF_2, DMA0, DMA_CH5, DMA_SUBPERI6 },
-    /* Channel 9: PB3 - TIMER1 CH1 - DMA0_CH5 */
-    { TIMER1, TIMER_CH_1, GPIOB, GPIO_PIN_3, GPIO_AF_1, DMA0, DMA_CH5, DMA_SUBPERI6 }
+    { TIMER1, TIMER_CH_0, GPIOA, GPIO_PIN_15, GPIO_AF_1, DMA0, DMA_CH7 },
+    /* Channel 8: PD15 - TIMER3 CH3 - DMA0_CH4 */
+    { TIMER3, TIMER_CH_3, GPIOD, GPIO_PIN_15, GPIO_AF_2, DMA0, DMA_CH4 },
+    /* Channel 9: PB3 - TIMER1 CH1 - DMA0_CH2 */
+    { TIMER1, TIMER_CH_1, GPIOB, GPIO_PIN_3, GPIO_AF_1, DMA0, DMA_CH2 }
 };
 
 /* Dshot bit tables */
-static const uint16_t dshot_bit0[MAX_PWM_OUT_CHAN] = {
+static uint16_t dshot_bit0[MAX_PWM_OUT_CHAN] = {
     DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0,
     DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0,
     DSHOT300_BIT_0, DSHOT300_BIT_0
 };
 
-static const uint16_t dshot_bit1[MAX_PWM_OUT_CHAN] = {
+static uint16_t dshot_bit1[MAX_PWM_OUT_CHAN] = {
     DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1,
     DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1,
     DSHOT300_BIT_1, DSHOT300_BIT_1
@@ -98,16 +110,17 @@ static void dshot_prepare_dmabuffer(uint8_t chan, uint16_t value, bool telem_req
 static void dshot_dma_start(uint8_t chan);
 
 /* DMA interrupt handler for DShot */
-void DMA0_Channel2_3_IRQHandler(void)
+/* Note: DMA0_Channel1, Channel3, Channel5, Channel6 are used by USART, so we only handle Channel2, Channel4, Channel7 */
+void DMA0_Channel2_IRQHandler(void)
 {
     rt_interrupt_enter();
-    if(dma_interrupt_flag_get(DMA0, DMA_CH2, DMA_INTF_FTFIF)) {
+    if(dma_interrupt_flag_get(DMA0, DMA_CH2, DMA_INT_FLAG_FTF)) {
         /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH2, DMA_INTF_FTFIF);
+        dma_interrupt_flag_clear(DMA0, DMA_CH2, DMA_INT_FLAG_FTF);
         
         /* Mark all channels using DMA_CH2 as complete */
         for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_ch == DMA_CH2) {
+            if(dshot_config[i].dma_channel == DMA_CH2) {
                 dshot_pwm[i].dma_trans_complete = 1;
             }
         }
@@ -115,28 +128,16 @@ void DMA0_Channel2_3_IRQHandler(void)
     rt_interrupt_leave();
 }
 
-void DMA0_Channel4_5_IRQHandler(void)
+void DMA0_Channel4_IRQHandler(void)
 {
     rt_interrupt_enter();
-    if(dma_interrupt_flag_get(DMA0, DMA_CH4, DMA_INTF_FTFIF)) {
+    if(dma_interrupt_flag_get(DMA0, DMA_CH4, DMA_INT_FLAG_FTF)) {
         /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH4, DMA_INTF_FTFIF);
+        dma_interrupt_flag_clear(DMA0, DMA_CH4, DMA_INT_FLAG_FTF);
         
         /* Mark all channels using DMA_CH4 as complete */
         for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_ch == DMA_CH4) {
-                dshot_pwm[i].dma_trans_complete = 1;
-            }
-        }
-    }
-    
-    if(dma_interrupt_flag_get(DMA0, DMA_CH5, DMA_INTF_FTFIF)) {
-        /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH5, DMA_INTF_FTFIF);
-        
-        /* Mark all channels using DMA_CH5 as complete */
-        for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_ch == DMA_CH5) {
+            if(dshot_config[i].dma_channel == DMA_CH4) {
                 dshot_pwm[i].dma_trans_complete = 1;
             }
         }
@@ -144,28 +145,16 @@ void DMA0_Channel4_5_IRQHandler(void)
     rt_interrupt_leave();
 }
 
-void DMA0_Channel6_7_IRQHandler(void)
+void DMA0_Channel7_IRQHandler(void)
 {
     rt_interrupt_enter();
-    if(dma_interrupt_flag_get(DMA0, DMA_CH6, DMA_INTF_FTFIF)) {
+    if(dma_interrupt_flag_get(DMA0, DMA_CH7, DMA_INT_FLAG_FTF)) {
         /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH6, DMA_INTF_FTFIF);
-        
-        /* Mark all channels using DMA_CH6 as complete */
-        for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_ch == DMA_CH6) {
-                dshot_pwm[i].dma_trans_complete = 1;
-            }
-        }
-    }
-    
-    if(dma_interrupt_flag_get(DMA0, DMA_CH7, DMA_INTF_FTFIF)) {
-        /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH7, DMA_INTF_FTFIF);
+        dma_interrupt_flag_clear(DMA0, DMA_CH7, DMA_INT_FLAG_FTF);
         
         /* Mark all channels using DMA_CH7 as complete */
         for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_ch == DMA_CH7) {
+            if(dshot_config[i].dma_channel == DMA_CH7) {
                 dshot_pwm[i].dma_trans_complete = 1;
             }
         }
@@ -489,39 +478,62 @@ static void dshot_timer_init(uint16_t speed)
 
 static void dshot_dma_init(void)
 {
-    dma_parameter_struct dma_init_struct;
-
     rcu_periph_clock_enable(RCU_DMA0);
-
-    /* Initialize DMA parameters */
-    dma_deinit(DMA0);
-    dma_struct_para_init(&dma_init_struct);
-    dma_init_struct.direction = DMA_MEMORY_TO_PERIPH;
-    dma_init_struct.memory_addr_inc = DMA_MEMORY_INCREASE_ENABLE;
-    dma_init_struct.periph_addr_inc = DMA_PERIPH_INCREASE_DISABLE;
-    dma_init_struct.memory_width = DMA_MEMORY_WIDTH_16BIT;
-    dma_init_struct.periph_width = DMA_PERIPH_WIDTH_16BIT;
-    dma_init_struct.priority = DMA_PRIORITY_ULTRA_HIGH;
-    dma_init_struct.loop_mode_enable = DMA_LOOP_MODE_DISABLE;
 
     /* Configure DMA channels for DShot */
     for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
         const dshot_channel_t* cfg = &dshot_config[i];
+        uint32_t timer_ccr_addr;
         
-        dma_init_struct.periph_addr = (uint32_t)&TIMER_CHCV(cfg->tim_periph, cfg->tim_channel);
-        dma_init_struct.memory_addr = (uint32_t)dshot_pwm[i].raw_buff;
-        dma_init_struct.number = DSHOT_DMA_BUF_SIZE;
+        /* Get timer capture/compare register address based on channel */
+        switch(cfg->tim_channel) {
+            case TIMER_CH_0:
+                timer_ccr_addr = (uint32_t)&TIMER_CH0CV(cfg->tim_periph);
+                break;
+            case TIMER_CH_1:
+                timer_ccr_addr = (uint32_t)&TIMER_CH1CV(cfg->tim_periph);
+                break;
+            case TIMER_CH_2:
+                timer_ccr_addr = (uint32_t)&TIMER_CH2CV(cfg->tim_periph);
+                break;
+            case TIMER_CH_3:
+                timer_ccr_addr = (uint32_t)&TIMER_CH3CV(cfg->tim_periph);
+                break;
+            default:
+                continue;
+        }
         
-        dma_init(cfg->dma_periph, cfg->dma_channel, &dma_init_struct);
+        /* Deinitialize DMA channel */
+        dma_deinit(cfg->dma_periph, cfg->dma_channel);
+        
+        /* Configure DMA channel */
+        dma_periph_address_config(cfg->dma_periph, cfg->dma_channel, timer_ccr_addr);
+        dma_memory_address_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_0, (uint32_t)dshot_pwm[i].raw_buff);
+        dma_transfer_number_config(cfg->dma_periph, cfg->dma_channel, DSHOT_DMA_BUF_SIZE);
+        
+        /* Configure DMA mode */
+        dma_memory_address_generation_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_INCREASE_ENABLE);
+        dma_peripheral_address_generation_config(cfg->dma_periph, cfg->dma_channel, DMA_PERIPH_INCREASE_DISABLE);
+        dma_memory_width_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_WIDTH_16BIT);
+        dma_periph_width_config(cfg->dma_periph, cfg->dma_channel, DMA_PERIPH_WIDTH_16BIT);
+        dma_priority_config(cfg->dma_periph, cfg->dma_channel, DMA_PRIORITY_ULTRA_HIGH);
+        
+        /* Configure DMA direction: memory to peripheral */
+        dma_transfer_direction_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_TO_PERIPH);
+        dma_circulation_disable(cfg->dma_periph, cfg->dma_channel);
+        
+        /* Select sub-peripheral */
+        dma_channel_subperipheral_select(cfg->dma_periph, cfg->dma_channel, (dma_subperipheral_enum)cfg->dma_channel);
         
         /* Enable DMA channel interrupt */
-        dma_interrupt_enable(cfg->dma_periph, cfg->dma_channel, DMA_INT_FTF);
+        dma_interrupt_enable(cfg->dma_periph, cfg->dma_channel, DMA_INT_FLAG_FTF);
     }
 
-    /* Enable DMA interrupts */
-    nvic_irq_enable(DMA0_Channel2_3_IRQn, 1, 0);
-    nvic_irq_enable(DMA0_Channel4_5_IRQn, 1, 0);
-    nvic_irq_enable(DMA0_Channel6_7_IRQn, 1, 0);
+    /* Enable DMA interrupts - only use channels not used by USART */
+    /* DMA0_Channel1, Channel3, Channel5, Channel6 are used by USART */
+    nvic_irq_enable(DMA0_Channel2_IRQn, 1, 0);
+    nvic_irq_enable(DMA0_Channel4_IRQn, 1, 0);
+    nvic_irq_enable(DMA0_Channel7_IRQn, 1, 0);
 }
 
 static void dshot_prepare_dmabuffer(uint8_t chan, uint16_t value, bool telem_req)
