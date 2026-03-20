@@ -19,6 +19,7 @@
 
 #include <firmament.h>
 
+#include "drv_dshot.h"
 #include "module/toml/toml.h"
 
 #ifdef __cplusplus

@@ -72,10 +72,14 @@ target = "Amov-ICF5"
 
 # Actuator Configuration
 [actuator]
+    # actuator device list, support multiple devices
     [[actuator.devices]]
-    protocol = "pwm"
-    name = "main_out"
-    freq = 400                  # pwm frequency in Hz
+        # protocol: pwm or dshot
+        # for pwm protocol, valid frequency: 50/125/250/400
+        # for dshot protocol, valid speed: 150/300/600/1200
+        protocol = "pwm"
+        name = "main_out"
+        freq = 400
 
     [[actuator.mappings]]
     from = "control_out"

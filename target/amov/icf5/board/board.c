@@ -15,6 +15,9 @@
  *****************************************************************************/
 #include <firmament.h>
 
+#include "gd32f4xx.h"
+#include "system_gd32f4xx.h"
+
 #include <board.h>
 #include <board_device.h>
 #include <msh.h>
@@ -43,9 +46,9 @@
 #include "drv_pwm.h"
 #include "drv_rc.h"
 #include "drv_sdio.h"
-#include "drv_spi.h"
-#include "drv_systick.h"
 #include "drv_usart.h"
+#include "drv_act.h"
+#include "drv_spi.h"
 #include "drv_usbd_cdc.h"
 #include "led.h"
 #include "model/control/control_interface.h"
@@ -239,41 +242,18 @@ static void NVIC_Configuration(void)
 /* this function will be called before rtos start, which is not in the thread context */
 void bsp_early_initialize(void)
 {
-    NVIC_Configuration();
+    /* configure the system clock */
+    board_system_clock_config();
 
-    /* init system heap */
-    rt_system_heap_init((void*)SYSTEM_FREE_MEM_BEGIN, (void*)SYSTEM_FREE_MEM_END);
+    /* enable the cache */
+    SCB_EnableICache();
+    SCB_EnableDCache();
 
-    /* usart driver init */
-    RT_CHECK(drv_usart_init());
+    /* initialize uart for console */
+    drv_usart_init();
 
-    /* init console to enable console output */
-    FMT_CHECK(console_init());
-
-    /* systick driver init */
-    RT_CHECK(drv_systick_init());
-
-    /* gpio driver init */
-    RT_CHECK(drv_gpio_init());
-
-    /* spi driver init */
-    RT_CHECK(drv_spi_init());
-
-    /* i2c driver init */
-    RT_CHECK(drv_i2c_init());
-    // RT_CHECK(drv_i2c_soft_init());
-
-    /* pwm driver init */
-    RT_CHECK(drv_pwm_init());
-
-    /* buzzer(pwm) driver init */
-    // RT_CHECK(drv_buzzer_init());
-
-    /* init remote controller driver */
-    RT_CHECK(drv_rc_init());
-
-    /* system statistic module */
-    FMT_CHECK(sys_stat_init());
+    /* initialize unified actuator driver */
+    RT_ASSERT(drv_act_init() == RT_EOK);
 }
 
 /* this function will be called after rtos start, which is in thread context */
@@ -293,6 +273,7 @@ void bsp_initialize(void)
 
     /* init storage devices */
     RT_CHECK(drv_sdio_init());
+    RT_ASSERT(drv_spi_init() == RT_EOK);
     RT_CHECK(drv_w25qxx_init("spi1_dev0", "mtdblk0"));
     /* init file system */
     FMT_CHECK(file_manager_init(mnt_table));
@@ -304,7 +285,7 @@ void bsp_initialize(void)
     FMT_CHECK(mavproxy_init());
 
     /* init usbd_cdc */
-    RT_CHECK(drv_usb_cdc_init());
+    RT_ASSERT(drv_usb_cdc_init() == RT_EOK);
 
     /* adc driver init */
     RT_CHECK(drv_adc_init());

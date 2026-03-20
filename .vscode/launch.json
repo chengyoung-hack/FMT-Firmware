@@ -128,8 +128,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/cheng/OneDrive/temp_git_workspace/FMT-Firmware-github/target/amov/icf5/drivers",
-      "program": "c:/Users/cheng/OneDrive/temp_git_workspace/FMT-Firmware-github/target/amov/icf5/drivers/build/Debug/outDebug",
+      "cwd": "c:/Users/cheng/OneDrive/temp_git_workspace/FMT-Firmware-git-xiaozhang",
+      "program": "c:/Users/cheng/OneDrive/temp_git_workspace/FMT-Firmware-git-xiaozhang/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

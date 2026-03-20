@@ -18,6 +18,7 @@
 #define ACTUATOR_H__
 
 #include <firmament.h>
+#include "drv_dshot.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,7 +59,7 @@ struct pwm_drv_configure {
     rt_uint16_t pwm_freq; /* pwm frequency in hz */
 };
 
-struct dshot_drv_configure {
+struct dshot_configure {
     rt_uint16_t speed;   /* 600, 300, 150 */
     rt_bool_t telem_req; /* telemetry request */
 };
@@ -67,7 +68,7 @@ struct actuator_configure {
     rt_uint8_t protocol;                     /* actuator protocol: pwm or dshot */
     rt_uint16_t chan_num;                    /* actuator channel number */
     struct pwm_drv_configure pwm_config;     /* pwm configuration */
-    struct dshot_drv_configure dshot_config; /* dshot configuration */
+    struct dshot_configure dshot_config;     /* dshot configuration */
 };
 
 struct actuator_device {
