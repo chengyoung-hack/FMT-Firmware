@@ -37,6 +37,7 @@ target = "Amov-ICF5"
     baudrate = 115200
 
 # Pilot CMD Configuration
+
 [pilot-cmd]
     # channel mapping for [yaw, throttle, roll, pitch]
     stick-channel = [4,3,1,2]
@@ -74,12 +75,13 @@ target = "Amov-ICF5"
 [actuator]
     # actuator device list, support multiple devices
     [[actuator.devices]]
-        # protocol: pwm or dshot
-        # for pwm protocol, valid frequency: 50/125/250/400
-        # for dshot protocol, valid speed: 150/300/600/1200
-        protocol = "pwm"
-        name = "main_out"
-        freq = 400
+    protocol = "dshot"
+    name = "main_out"
+    speed = 300                  # dshot speed: 150, 300, 600
+    telem-req = false            # request telemetry on main_out
+    #protocol = "pwm"
+    #name = "main_out"
+    #freq = 50
 
     [[actuator.mappings]]
     from = "control_out"

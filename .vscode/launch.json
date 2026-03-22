@@ -99,12 +99,27 @@
       "executable": "target/amov/icf5/build/fmt_amov-icf5.elf",
       "serverpath": "${env:JLINK_SERVER}",
       "servertype": "jlink",
-      "device": "GD32F470VG",
+      "device": "GD32F470VGT6",
       "interface": "swd",
       "armToolchainPath": "${env:RTT_EXEC_PATH}",
       "serialNumber": "",
       "svdFile": "target/amov/icf5/GD32F4xx.svd",
       "runToMain": true
+    },
+    {
+      "name": "J-Link Debug: icf5",
+      "type": "cortex-debug",
+      "request": "launch",
+      "servertype": "jlink",
+      "device": "GD32F470VG",
+      "interface": "swd",
+      "cwd": "${workspaceRoot}",
+      "executable": "${workspaceRoot}/target/amov/icf5/build/fmt_amov-icf5.elf",
+      "svdFile": "${workspaceRoot}/target/amov/icf5/GD32F4xx.svd",
+      "runToMain": true,
+      // "preLaunchTask": "Build icf5 firmware",
+      "gdbServerPath": "C:\\Software\\Jlink\\JLink_V794\\JLinkGDBServerCL.exe",
+      "showDevDebugOutput": "raw"
     },
     {
       "name": "X1 Debug J-Link",

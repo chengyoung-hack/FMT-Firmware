@@ -108,7 +108,23 @@ static rt_size_t hal_actuator_write(rt_device_t dev, rt_off_t pos, const void* b
     /* saturate channel value */
     for (uint8_t i = 0; i < 16; i++) {
         if (pos & (1 << i)) {
-            chan_val[index] = constrain_uint16(val_ptr[index], act->range[0], act->range[1]);
+            uint16_t v = val_ptr[index];
+
+            if (act->config.protocol == ACT_PROTOCOL_DSHOT) {
+                /* Control model always outputs PWM µs [1000,2000].
+                 * Map to DShot throttle: 1000 → 0 (stop), 1001..2000 → 48..2047. */
+                if (v <= 1000) {
+                    v = 0;
+                } else {
+                    if (v > 2000) v = 2000;
+                    v = DSHOT_MIN_THROTTLE
+                      + (uint16_t)((uint32_t)(v - 1001) * DSHOT_RANGE / 999);
+                }
+            } else {
+                v = constrain_uint16(v, act->range[0], act->range[1]);
+            }
+
+            chan_val[index] = v;
             index++;
         }
     }

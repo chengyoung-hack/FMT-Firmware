@@ -285,6 +285,12 @@ bool crsf_update(crsf_decoder_t* decoder)
         }
     }
     
+    // Check if we have valid decoded data
+    if (decoder->rc_count > 0 && decoder->crsf_data_ready == 0) {
+        // Data was decoded but flag was cleared, set it again
+        decoder->crsf_data_ready = 1;
+    }
+    
     // Return the data ready status
     return decoder->crsf_data_ready;
 }

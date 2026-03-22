@@ -21,11 +21,12 @@
 #define DRV_DBG(...)
 
 #define PWM_FREQ_50HZ  (50)
+#define PWM_FREQ_100HZ (100)
 #define PWM_FREQ_125HZ (125)
 #define PWM_FREQ_250HZ (250)
 #define PWM_FREQ_400HZ (400)
 
-#define MAX_PWM_OUT_CHAN      10            // Main Out has 10 pwm channel
+#define MAX_PWM_OUT_CHAN      4            // Main Out has 10 pwm channel
 #define TIMER_FREQUENCY       2500000       // Timer frequency: 2.5M
 #define PWM_DEFAULT_FREQUENCY PWM_FREQ_50HZ // pwm default frequency
 
@@ -37,135 +38,86 @@
 #ifdef RT_USING_DSHOT
 /* DShot configuration */
 #define DSHOT_TIM_FREQ            120000000
-#define DSHOT150_BIT_0            214
-#define DSHOT150_BIT_1            428
-#define DSHOT300_BIT_0            107
-#define DSHOT300_BIT_1            214
-#define DSHOT600_BIT_0            54
-#define DSHOT600_BIT_1            107
-#define DSHOT_DMA_BUF_SIZE        18  /* 16位数据 + 2个停止位 */
+#define DSHOT_DMA_BUF_SIZE        18  /* 16 data bits + 2 stop bits */
 #define DSHOT_CMD_MOTOR_STOP      0
 
-/* DShot channel configuration structure */
+/* DShot channel → DMA mapping (all on DMA1, SUBPERI6 = TIMER0 channels)
+ * DMA request source: DMAS=1 → CHxDEN triggered by update event, not compare match.
+ * This avoids the DMA1_CH5 conflict with UART0 RX that would occur with TIMER0_UP. */
 typedef struct {
-    uint32_t tim_periph;      /* Timer peripheral (TIMER0, TIMER1, TIMER3) */
-    uint16_t tim_channel;     /* Timer channel (TIMER_CH_0, TIMER_CH_1, etc.) */
-    uint32_t gpio_port;       /* GPIO port (GPIOA, GPIOB, GPIOD, GPIOE) */
-    uint32_t gpio_pin;        /* GPIO pin */
-    uint32_t gpio_af;         /* GPIO alternate function */
-    uint32_t dma_periph;      /* DMA peripheral (DMA0) */
-    dma_channel_enum dma_channel; /* DMA channel */
-} dshot_channel_t;
+    dma_channel_enum dma_channel;
+    uint32_t         timer_ccr_addr;
+} dshot_dma_map_t;
 
-/* DShot data structures - must be global for interrupt handlers */
-/* Note: DMA_CH1, CH3, CH5, CH6 are used by USART, so we only use CH2, CH4, CH7 for DShot */
-static const dshot_channel_t dshot_config[MAX_PWM_OUT_CHAN] = {
-    /* Channel 0: PE9 - TIMER0 CH0 - DMA0_CH2 */
-    { TIMER0, TIMER_CH_0, GPIOE, GPIO_PIN_9, GPIO_AF_1, DMA0, DMA_CH2 },
-    /* Channel 1: PE11 - TIMER0 CH1 - DMA0_CH2 */
-    { TIMER0, TIMER_CH_1, GPIOE, GPIO_PIN_11, GPIO_AF_1, DMA0, DMA_CH2 },
-    /* Channel 2: PE13 - TIMER0 CH2 - DMA0_CH4 */
-    { TIMER0, TIMER_CH_2, GPIOE, GPIO_PIN_13, GPIO_AF_1, DMA0, DMA_CH4 },
-    /* Channel 3: PE14 - TIMER0 CH3 - DMA0_CH4 */
-    { TIMER0, TIMER_CH_3, GPIOE, GPIO_PIN_14, GPIO_AF_1, DMA0, DMA_CH4 },
-    /* Channel 4: PD13 - TIMER3 CH1 - DMA0_CH7 */
-    { TIMER3, TIMER_CH_1, GPIOD, GPIO_PIN_13, GPIO_AF_2, DMA0, DMA_CH7 },
-    /* Channel 5: PD14 - TIMER3 CH2 - DMA0_CH7 */
-    { TIMER3, TIMER_CH_2, GPIOD, GPIO_PIN_14, GPIO_AF_2, DMA0, DMA_CH7 },
-    /* Channel 6: PA3 - TIMER1 CH3 - DMA0_CH7 */
-    { TIMER1, TIMER_CH_3, GPIOA, GPIO_PIN_3, GPIO_AF_1, DMA0, DMA_CH7 },
-    /* Channel 7: PA15 - TIMER1 CH0 - DMA0_CH7 */
-    { TIMER1, TIMER_CH_0, GPIOA, GPIO_PIN_15, GPIO_AF_1, DMA0, DMA_CH7 },
-    /* Channel 8: PD15 - TIMER3 CH3 - DMA0_CH4 */
-    { TIMER3, TIMER_CH_3, GPIOD, GPIO_PIN_15, GPIO_AF_2, DMA0, DMA_CH4 },
-    /* Channel 9: PB3 - TIMER1 CH1 - DMA0_CH2 */
-    { TIMER1, TIMER_CH_1, GPIOB, GPIO_PIN_3, GPIO_AF_1, DMA0, DMA_CH2 }
+static dshot_dma_map_t dshot_dma_map[MAX_PWM_OUT_CHAN] = {
+    { DMA_CH1, 0 },  /* CH0: DMA1_CH1 SUBPERI6 (TIMER0_CH0) → TIMER_CH0CV */
+    { DMA_CH2, 0 },  /* CH1: DMA1_CH2 SUBPERI6 (TIMER0_CH1) → TIMER_CH1CV */
+    { DMA_CH6, 0 },  /* CH2: DMA1_CH6 SUBPERI6 (TIMER0_CH2) → TIMER_CH2CV */
+    { DMA_CH4, 0 },  /* CH3: DMA1_CH4 SUBPERI6 (TIMER0_CH3) → TIMER_CH3CV */
 };
 
-/* Dshot bit tables */
-static uint16_t dshot_bit0[MAX_PWM_OUT_CHAN] = {
-    DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0,
-    DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0, DSHOT300_BIT_0,
-    DSHOT300_BIT_0, DSHOT300_BIT_0
-};
+/* DShot bit timing (populated by dshot_timer_init) */
+static uint16_t dshot_bit0;   /* 37.5 % duty */
+static uint16_t dshot_bit1;   /* 75.0 % duty */
 
-static uint16_t dshot_bit1[MAX_PWM_OUT_CHAN] = {
-    DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1,
-    DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1, DSHOT300_BIT_1,
-    DSHOT300_BIT_1, DSHOT300_BIT_1
-};
+/* Per-channel DMA buffer: 16 bits + 2 stop words = 18 half-words */
+static uint16_t dshot_raw[MAX_PWM_OUT_CHAN][DSHOT_DMA_BUF_SIZE];
 
-/* Dshot PWM data structure */
-struct dshot_pwm_data {
-    uint16_t raw_buff[DSHOT_DMA_BUF_SIZE];
-    volatile uint8_t dma_trans_complete;
-};
-static struct dshot_pwm_data dshot_pwm[MAX_PWM_OUT_CHAN];
+/* Track DMA completion for optional synchronisation */
+static volatile uint8_t dshot_dma_done_mask;
 
-/* Forward declarations for DShot functions */
+/* Forward declarations */
 static void dshot_gpio_init(void);
 static void dshot_timer_init(uint16_t speed);
 static void dshot_dma_init(void);
 static void dshot_prepare_dmabuffer(uint8_t chan, uint16_t value, bool telem_req);
-static void dshot_dma_start(uint8_t chan);
+static void dshot_fire(void);
 
-/* DMA interrupt handler for DShot */
-/* Note: DMA0_Channel1, Channel3, Channel5, Channel6 are used by USART, so we only handle Channel2, Channel4, Channel7 */
-void DMA0_Channel2_IRQHandler(void)
+/* DMA completion ISR – shared by all 4 DShot DMA channels.
+ * On transfer complete: disable the DMA channel and the corresponding
+ * timer channel-DMA enable bit so that subsequent update events do not
+ * trigger stray DMA requests. */
+static void dshot_dma_irq_handler(dma_channel_enum dma_ch, uint16_t timer_dma_bit, uint8_t chan_mask_bit)
+{
+    if (dma_interrupt_flag_get(DMA1, dma_ch, DMA_INT_FLAG_FTF)) {
+        dma_interrupt_flag_clear(DMA1, dma_ch, DMA_INT_FLAG_FTF);
+        dma_channel_disable(DMA1, dma_ch);
+        timer_dma_disable(TIMER0, timer_dma_bit);
+        dshot_dma_done_mask |= chan_mask_bit;
+    }
+}
+
+void DMA1_Channel1_IRQHandler(void)
 {
     rt_interrupt_enter();
-    if(dma_interrupt_flag_get(DMA0, DMA_CH2, DMA_INT_FLAG_FTF)) {
-        /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH2, DMA_INT_FLAG_FTF);
-        
-        /* Mark all channels using DMA_CH2 as complete */
-        for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_channel == DMA_CH2) {
-                dshot_pwm[i].dma_trans_complete = 1;
-            }
-        }
-    }
+    dshot_dma_irq_handler(DMA_CH1, TIMER_DMA_CH0D, 0x01);
     rt_interrupt_leave();
 }
 
-void DMA0_Channel4_IRQHandler(void)
+void DMA1_Channel2_IRQHandler(void)
 {
     rt_interrupt_enter();
-    if(dma_interrupt_flag_get(DMA0, DMA_CH4, DMA_INT_FLAG_FTF)) {
-        /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH4, DMA_INT_FLAG_FTF);
-        
-        /* Mark all channels using DMA_CH4 as complete */
-        for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_channel == DMA_CH4) {
-                dshot_pwm[i].dma_trans_complete = 1;
-            }
-        }
-    }
+    dshot_dma_irq_handler(DMA_CH2, TIMER_DMA_CH1D, 0x02);
     rt_interrupt_leave();
 }
 
-void DMA0_Channel7_IRQHandler(void)
+void DMA1_Channel4_IRQHandler(void)
 {
     rt_interrupt_enter();
-    if(dma_interrupt_flag_get(DMA0, DMA_CH7, DMA_INT_FLAG_FTF)) {
-        /* Clear flag */
-        dma_interrupt_flag_clear(DMA0, DMA_CH7, DMA_INT_FLAG_FTF);
-        
-        /* Mark all channels using DMA_CH7 as complete */
-        for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-            if(dshot_config[i].dma_channel == DMA_CH7) {
-                dshot_pwm[i].dma_trans_complete = 1;
-            }
-        }
-    }
+    dshot_dma_irq_handler(DMA_CH4, TIMER_DMA_CH3D, 0x08);
+    rt_interrupt_leave();
+}
+
+void DMA1_Channel6_IRQHandler(void)
+{
+    rt_interrupt_enter();
+    dshot_dma_irq_handler(DMA_CH6, TIMER_DMA_CH2D, 0x04);
     rt_interrupt_leave();
 }
 #endif /* RT_USING_DSHOT */
 
 static uint32_t __pwm_freq = PWM_DEFAULT_FREQUENCY;
 static float __pwm_dc[MAX_PWM_OUT_CHAN];
-static uint16_t __act_val[MAX_PWM_OUT_CHAN];
 static uint8_t __current_protocol = ACT_PROTOCOL_PWM;
 
 /* Forward declarations */
@@ -217,6 +169,94 @@ static void pwm_gpio_init(void)
     gpio_mode_set(GPIOD, GPIO_MODE_AF, GPIO_PUPD_NONE, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15);
     gpio_output_options_set(GPIOD, GPIO_OTYPE_PP, GPIO_OSPEED_50MHZ, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15);
     gpio_af_set(GPIOD, GPIO_AF_2, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15);
+}
+
+static void pwm_timer_init(void)
+{
+    timer_oc_parameter_struct timer_ocintpara;
+    uint16_t timer_psc;
+    timer_parameter_struct timer_initpara;
+
+    /* TIMER clock configuration */
+    rcu_periph_clock_enable(RCU_TIMER0);
+    rcu_periph_clock_enable(RCU_TIMER1);
+    rcu_periph_clock_enable(RCU_TIMER3);
+
+    /* When TIMERSEL is set, the TIMER clock is equal to CK_AHB */
+    rcu_timer_clock_prescaler_config(RCU_TIMER_PSC_MUL4);
+
+    /* Timer_PSC = CK_AHB / TARGET_TIMER_CK */
+    timer_psc = rcu_clock_freq_get(CK_AHB) / TIMER_FREQUENCY - 1;
+
+    /* Timer init parameter */
+    timer_initpara.prescaler = timer_psc;
+    timer_initpara.alignedmode = TIMER_COUNTER_EDGE;
+    timer_initpara.counterdirection = TIMER_COUNTER_UP;
+    timer_initpara.period = PWM_ARR(__pwm_freq) - 1;
+    timer_initpara.clockdivision = TIMER_CKDIV_DIV1;
+    timer_initpara.repetitioncounter = 0;
+
+    /* Timer deinit */
+    timer_deinit(TIMER0);
+    timer_deinit(TIMER1);
+    timer_deinit(TIMER3);
+
+    /* Timer0 must enable primary output to enable pwm output */
+    timer_primary_output_config(TIMER0, ENABLE);
+
+    /* Timer init */
+    timer_init(TIMER0, &timer_initpara);
+    timer_init(TIMER1, &timer_initpara);
+    timer_init(TIMER3, &timer_initpara);
+
+    /* Timer channel configuration in PWM mode */
+    timer_ocintpara.ocpolarity = TIMER_OC_POLARITY_HIGH;
+    timer_ocintpara.outputstate = TIMER_CCX_ENABLE;
+    timer_ocintpara.ocnpolarity = TIMER_OCN_POLARITY_HIGH;
+    timer_ocintpara.outputnstate = TIMER_CCXN_DISABLE;
+    timer_ocintpara.ocidlestate = TIMER_OC_IDLE_STATE_LOW;
+    timer_ocintpara.ocnidlestate = TIMER_OCN_IDLE_STATE_LOW;
+
+    /* Timer0 channel configure */
+    timer_channel_output_config(TIMER0, TIMER_CH_0, &timer_ocintpara);
+    timer_channel_output_config(TIMER0, TIMER_CH_1, &timer_ocintpara);
+    timer_channel_output_config(TIMER0, TIMER_CH_2, &timer_ocintpara);
+    timer_channel_output_config(TIMER0, TIMER_CH_3, &timer_ocintpara);
+    timer_channel_output_mode_config(TIMER0, TIMER_CH_0, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER0, TIMER_CH_0, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER0, TIMER_CH_1, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER0, TIMER_CH_1, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER0, TIMER_CH_2, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER0, TIMER_CH_2, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER0, TIMER_CH_3, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER0, TIMER_CH_3, TIMER_OC_SHADOW_DISABLE);
+
+    /* Timer1 channel configure */
+    timer_channel_output_config(TIMER1, TIMER_CH_0, &timer_ocintpara);
+    timer_channel_output_config(TIMER1, TIMER_CH_1, &timer_ocintpara);
+    timer_channel_output_config(TIMER1, TIMER_CH_3, &timer_ocintpara);
+    timer_channel_output_mode_config(TIMER1, TIMER_CH_0, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER1, TIMER_CH_0, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER1, TIMER_CH_1, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER1, TIMER_CH_1, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER1, TIMER_CH_3, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER1, TIMER_CH_3, TIMER_OC_SHADOW_DISABLE);
+
+    /* Timer3 channel configure */
+    timer_channel_output_config(TIMER3, TIMER_CH_1, &timer_ocintpara);
+    timer_channel_output_config(TIMER3, TIMER_CH_2, &timer_ocintpara);
+    timer_channel_output_config(TIMER3, TIMER_CH_3, &timer_ocintpara);
+    timer_channel_output_mode_config(TIMER3, TIMER_CH_1, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER3, TIMER_CH_1, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER3, TIMER_CH_2, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER3, TIMER_CH_2, TIMER_OC_SHADOW_DISABLE);
+    timer_channel_output_mode_config(TIMER3, TIMER_CH_3, TIMER_OC_MODE_PWM0);
+    timer_channel_output_shadow_config(TIMER3, TIMER_CH_3, TIMER_OC_SHADOW_DISABLE);
+
+    /* auto-reload preload enable */
+    timer_auto_reload_shadow_enable(TIMER0);
+    timer_auto_reload_shadow_enable(TIMER1);
+    timer_auto_reload_shadow_enable(TIMER3);
 }
 
 static void __write_pwm(uint8_t chan_id, float dc)
@@ -288,6 +328,7 @@ static rt_err_t __set_pwm_frequency(uint16_t freq)
 
     switch (freq) {
     case PWM_FREQ_50HZ:
+    case PWM_FREQ_100HZ:
     case PWM_FREQ_125HZ:
     case PWM_FREQ_250HZ:
     case PWM_FREQ_400HZ:
@@ -345,59 +386,35 @@ static void dshot_gpio_init(void)
 static void dshot_timer_init(uint16_t speed)
 {
     timer_oc_parameter_struct timer_ocintpara;
-    uint16_t timer_psc;
     timer_parameter_struct timer_initpara;
-    uint32_t tim_freq = DSHOT_TIM_FREQ;
-    uint16_t bit0_val, bit1_val;
 
-    /* Determine timing values based on speed */
-    switch(speed) {
-        case 150:
-            bit0_val = DSHOT150_BIT_0;
-            bit1_val = DSHOT150_BIT_1;
-            break;
-        case 300:
-            bit0_val = DSHOT300_BIT_0;
-            bit1_val = DSHOT300_BIT_1;
-            break;
-        case 600:
-            bit0_val = DSHOT600_BIT_0;
-            bit1_val = DSHOT600_BIT_1;
-            break;
-        default:
-            bit0_val = DSHOT300_BIT_0;
-            bit1_val = DSHOT300_BIT_1;
-            break;
+    switch (speed) {
+    case 150: case 300: case 600: break;
+    default: speed = 300; break;
     }
 
-    /* Update bit tables */
-    for(int i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-        dshot_bit0[i] = bit0_val;
-        dshot_bit1[i] = bit1_val;
-    }
-
-    /* TIMER clock configuration */
     rcu_periph_clock_enable(RCU_TIMER0);
-    rcu_periph_clock_enable(RCU_TIMER1);
-    rcu_periph_clock_enable(RCU_TIMER3);
+    /* Timer clock = CK_AHB = 240 MHz (MUL4 mode) */
+    rcu_timer_clock_prescaler_config(RCU_TIMER_PSC_MUL4);
 
-    /* Calculate prescaler for DShot timing */
-    /* For DShot300: 120MHz / (1/(1.67us)) = 120MHz * 1.67us ≈ 200, so psc = 199 */
-    /* But we use fixed values from original implementation */
-    
-    /* TIMER0 configuration (APB2 = 120MHz, TIMER0 clock = 240MHz) */
+    uint16_t timer_psc = rcu_clock_freq_get(CK_AHB) / DSHOT_TIM_FREQ - 1;  /* =1, 120 MHz */
+    uint16_t dshot_period = DSHOT_TIM_FREQ / (speed * 1000) - 1;            /* DShot300: 399 */
+    uint16_t period_ticks = dshot_period + 1;
+
+    dshot_bit0 = period_ticks * 3 / 8;   /* 37.5 % */
+    dshot_bit1 = period_ticks * 3 / 4;   /* 75.0 % */
+
     timer_deinit(TIMER0);
     timer_struct_para_init(&timer_initpara);
-    timer_psc = 199; /* For DShot300 timing */
     timer_initpara.prescaler         = timer_psc;
     timer_initpara.alignedmode       = TIMER_COUNTER_EDGE;
     timer_initpara.counterdirection  = TIMER_COUNTER_UP;
-    timer_initpara.period            = 1000; /* Large enough period */
+    timer_initpara.period            = dshot_period;
     timer_initpara.clockdivision     = TIMER_CKDIV_DIV1;
     timer_initpara.repetitioncounter = 0;
     timer_init(TIMER0, &timer_initpara);
 
-    /* Configure all channels in PWM mode 1 */
+    /* OC parameters common to all channels */
     timer_ocintpara.outputstate  = TIMER_CCX_ENABLE;
     timer_ocintpara.outputnstate = TIMER_CCXN_DISABLE;
     timer_ocintpara.ocpolarity   = TIMER_OC_POLARITY_HIGH;
@@ -405,208 +422,170 @@ static void dshot_timer_init(uint16_t speed)
     timer_ocintpara.ocidlestate  = TIMER_OC_IDLE_STATE_LOW;
     timer_ocintpara.ocnidlestate = TIMER_OCN_IDLE_STATE_LOW;
 
-    /* CH0 configuration */
-    timer_channel_output_config(TIMER0, TIMER_CH_0, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER0, TIMER_CH_0, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER0, TIMER_CH_0, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH1 configuration */
-    timer_channel_output_config(TIMER0, TIMER_CH_1, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER0, TIMER_CH_1, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER0, TIMER_CH_1, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH2 configuration */
-    timer_channel_output_config(TIMER0, TIMER_CH_2, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER0, TIMER_CH_2, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER0, TIMER_CH_2, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH3 configuration */
-    timer_channel_output_config(TIMER0, TIMER_CH_3, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER0, TIMER_CH_3, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER0, TIMER_CH_3, TIMER_OC_SHADOW_DISABLE);
+    /* CH0 – CH3: PWM mode 0, OC shadow DISABLED.
+     * DMA is triggered by update event (DMAS=1), so CCR is written
+     * at the start of each period.  No preload needed. */
+    for (uint16_t ch = TIMER_CH_0; ch <= TIMER_CH_3; ch++) {
+        timer_channel_output_config(TIMER0, ch, &timer_ocintpara);
+        timer_channel_output_mode_config(TIMER0, ch, TIMER_OC_MODE_PWM0);
+        timer_channel_output_shadow_config(TIMER0, ch, TIMER_OC_SHADOW_DISABLE);
+    }
 
     timer_auto_reload_shadow_enable(TIMER0);
-    /* Keep timer disabled until DMA start */
+    timer_primary_output_config(TIMER0, ENABLE);
 
-    /* TIMER1 configuration */
-    timer_deinit(TIMER1);
-    timer_initpara.prescaler = timer_psc;
-    timer_initpara.period = 1000;
-    timer_init(TIMER1, &timer_initpara);
+    /* DMAS = 1: CHxDEN DMA requests are sourced from the update event
+     * instead of the channel compare-match.  This way four independent
+     * DMA channels (one per CCR) are all triggered simultaneously by
+     * each timer overflow, and we do NOT need the TIMER0_UP DMA stream
+     * (DMA1_CH5 SUBPERI6) which conflicts with UART0 RX. */
+    timer_channel_dma_request_source_select(TIMER0, TIMER_DMAREQUEST_UPDATEEVENT);
 
-    /* CH0 configuration */
-    timer_channel_output_config(TIMER1, TIMER_CH_0, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER1, TIMER_CH_0, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER1, TIMER_CH_0, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH1 configuration */
-    timer_channel_output_config(TIMER1, TIMER_CH_1, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER1, TIMER_CH_1, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER1, TIMER_CH_1, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH3 configuration */
-    timer_channel_output_config(TIMER1, TIMER_CH_3, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER1, TIMER_CH_3, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER1, TIMER_CH_3, TIMER_OC_SHADOW_DISABLE);
-
-    timer_auto_reload_shadow_enable(TIMER1);
-
-    /* TIMER3 configuration (APB1 = 60MHz, TIMER3 clock = 120MHz) */
-    timer_deinit(TIMER3);
-    timer_psc = 99; /* Different prescaler for APB1 timers */
-    timer_initpara.prescaler = timer_psc;
-    timer_initpara.period = 1000;
-    timer_init(TIMER3, &timer_initpara);
-
-    /* CH1 configuration */
-    timer_channel_output_config(TIMER3, TIMER_CH_1, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER3, TIMER_CH_1, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER3, TIMER_CH_1, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH2 configuration */
-    timer_channel_output_config(TIMER3, TIMER_CH_2, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER3, TIMER_CH_2, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER3, TIMER_CH_2, TIMER_OC_SHADOW_DISABLE);
-
-    /* CH3 configuration */
-    timer_channel_output_config(TIMER3, TIMER_CH_3, &timer_ocintpara);
-    timer_channel_output_mode_config(TIMER3, TIMER_CH_3, TIMER_OC_MODE_PWM0);
-    timer_channel_output_shadow_config(TIMER3, TIMER_CH_3, TIMER_OC_SHADOW_DISABLE);
-
-    timer_auto_reload_shadow_enable(TIMER3);
+    /* URS = 1: only counter overflow generates the update event flag.
+     * Software UPG will still reset CNT and reload PSC/ARR but will
+     * NOT generate UIF or a DMA request – this prevents an accidental
+     * DMA transfer during the start-up sequence. */
+    timer_update_source_config(TIMER0, TIMER_UPDATE_SRC_REGULAR);
 }
 
 static void dshot_dma_init(void)
 {
-    rcu_periph_clock_enable(RCU_DMA0);
+    rcu_periph_clock_enable(RCU_DMA1);
 
-    /* Configure DMA channels for DShot */
-    for(uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
-        const dshot_channel_t* cfg = &dshot_config[i];
-        uint32_t timer_ccr_addr;
-        
-        /* Get timer capture/compare register address based on channel */
-        switch(cfg->tim_channel) {
-            case TIMER_CH_0:
-                timer_ccr_addr = (uint32_t)&TIMER_CH0CV(cfg->tim_periph);
-                break;
-            case TIMER_CH_1:
-                timer_ccr_addr = (uint32_t)&TIMER_CH1CV(cfg->tim_periph);
-                break;
-            case TIMER_CH_2:
-                timer_ccr_addr = (uint32_t)&TIMER_CH2CV(cfg->tim_periph);
-                break;
-            case TIMER_CH_3:
-                timer_ccr_addr = (uint32_t)&TIMER_CH3CV(cfg->tim_periph);
-                break;
-            default:
-                continue;
-        }
-        
-        /* Deinitialize DMA channel */
-        dma_deinit(cfg->dma_periph, cfg->dma_channel);
-        
-        /* Configure DMA channel */
-        dma_periph_address_config(cfg->dma_periph, cfg->dma_channel, timer_ccr_addr);
-        dma_memory_address_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_0, (uint32_t)dshot_pwm[i].raw_buff);
-        dma_transfer_number_config(cfg->dma_periph, cfg->dma_channel, DSHOT_DMA_BUF_SIZE);
-        
-        /* Configure DMA mode */
-        dma_memory_address_generation_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_INCREASE_ENABLE);
-        dma_peripheral_address_generation_config(cfg->dma_periph, cfg->dma_channel, DMA_PERIPH_INCREASE_DISABLE);
-        dma_memory_width_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_WIDTH_16BIT);
-        dma_periph_width_config(cfg->dma_periph, cfg->dma_channel, DMA_PERIPH_WIDTH_16BIT);
-        dma_priority_config(cfg->dma_periph, cfg->dma_channel, DMA_PRIORITY_ULTRA_HIGH);
-        
-        /* Configure DMA direction: memory to peripheral */
-        dma_transfer_direction_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_TO_PERIPH);
-        dma_circulation_disable(cfg->dma_periph, cfg->dma_channel);
-        
-        /* Select sub-peripheral */
-        dma_channel_subperipheral_select(cfg->dma_periph, cfg->dma_channel, (dma_subperipheral_enum)cfg->dma_channel);
-        
-        /* Enable DMA channel interrupt */
-        dma_interrupt_enable(cfg->dma_periph, cfg->dma_channel, DMA_INT_FLAG_FTF);
+    /* Cache CCR register addresses */
+    dshot_dma_map[0].timer_ccr_addr = (uint32_t)&TIMER_CH0CV(TIMER0);
+    dshot_dma_map[1].timer_ccr_addr = (uint32_t)&TIMER_CH1CV(TIMER0);
+    dshot_dma_map[2].timer_ccr_addr = (uint32_t)&TIMER_CH2CV(TIMER0);
+    dshot_dma_map[3].timer_ccr_addr = (uint32_t)&TIMER_CH3CV(TIMER0);
+
+    for (uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
+        dma_channel_enum dch = dshot_dma_map[i].dma_channel;
+
+        dma_deinit(DMA1, dch);
+
+        dma_periph_address_config(DMA1, dch, dshot_dma_map[i].timer_ccr_addr);
+        dma_memory_address_config(DMA1, dch, DMA_MEMORY_0, (uint32_t)dshot_raw[i]);
+        dma_transfer_number_config(DMA1, dch, DSHOT_DMA_BUF_SIZE);
+
+        dma_memory_address_generation_config(DMA1, dch, DMA_MEMORY_INCREASE_ENABLE);
+        dma_peripheral_address_generation_config(DMA1, dch, DMA_PERIPH_INCREASE_DISABLE);
+        dma_memory_width_config(DMA1, dch, DMA_MEMORY_WIDTH_16BIT);
+        dma_periph_width_config(DMA1, dch, DMA_PERIPH_WIDTH_16BIT);
+        dma_priority_config(DMA1, dch, DMA_PRIORITY_ULTRA_HIGH);
+        dma_transfer_direction_config(DMA1, dch, DMA_MEMORY_TO_PERIPH);
+        dma_circulation_disable(DMA1, dch);
+
+        /* SUBPERI6 = TIMER0 channel requests */
+        dma_channel_subperipheral_select(DMA1, dch, DMA_SUBPERI6);
+
+        /* Enable transfer-complete interrupt */
+        dma_interrupt_enable(DMA1, dch, DMA_CHXCTL_FTFIE);
+
+        /* Do NOT enable CHxDEN here – it is armed in dshot_fire(). */
     }
 
-    /* Enable DMA interrupts - only use channels not used by USART */
-    /* DMA0_Channel1, Channel3, Channel5, Channel6 are used by USART */
-    nvic_irq_enable(DMA0_Channel2_IRQn, 1, 0);
-    nvic_irq_enable(DMA0_Channel4_IRQn, 1, 0);
-    nvic_irq_enable(DMA0_Channel7_IRQn, 1, 0);
+    nvic_irq_enable(DMA1_Channel1_IRQn, 1, 0);
+    nvic_irq_enable(DMA1_Channel2_IRQn, 1, 0);
+    nvic_irq_enable(DMA1_Channel4_IRQn, 1, 0);
+    nvic_irq_enable(DMA1_Channel6_IRQn, 1, 0);
 }
 
 static void dshot_prepare_dmabuffer(uint8_t chan, uint16_t value, bool telem_req)
 {
-    uint16_t* p_buff = dshot_pwm[chan].raw_buff;
-    uint16_t packet = 0;
+    uint16_t* p = dshot_raw[chan];
+    uint16_t packet;
 
-    /* Handle Dshot commands (value < 48) and throttle values (48-2047) */
-    if (value > 2047) {
-        value = 2047;
-    }
-    if (value < 48 && value != DSHOT_CMD_MOTOR_STOP) {
-        /* Invalid command, set to stop */
-        value = DSHOT_CMD_MOTOR_STOP;
-    }
+    if (value > 2047) value = 2047;
 
-    /* Build Dshot packet: 11-bit throttle + 1-bit telemetry request + 4-bit CRC */
     if (value == DSHOT_CMD_MOTOR_STOP) {
         packet = 0;
     } else {
         packet = (value << 1) | (telem_req ? 1 : 0);
-        
-        /* Calculate CRC: XOR high 12 bits */
         uint16_t csum = packet;
         csum ^= csum >> 8;
         csum ^= csum >> 4;
         csum &= 0xF;
-        
         packet = (packet << 4) | csum;
     }
 
-    /* Fill DMA buffer */
     for (uint8_t i = 0; i < 16; i++) {
-        if (packet & (1 << (15 - i))) {
-            p_buff[i] = dshot_bit1[chan];
-        } else {
-            p_buff[i] = dshot_bit0[chan];
-        }
+        p[i] = (packet & (1 << (15 - i))) ? dshot_bit1 : dshot_bit0;
     }
-
-    /* Add stop bits */
-    p_buff[16] = 0;
-    p_buff[17] = 0;
+    p[16] = 0;
+    p[17] = 0;
 }
 
-static void dshot_dma_start(uint8_t chan)
+/* Arm DMA channels, fire TIMER0, and let update events clock the frame out.
+ *
+ * Sequence:
+ *   1. Stop timer, force all outputs LOW (CCR=0).
+ *   2. Software UPG to reset CNT and latch CCR=0 into the active registers.
+ *      Because URS=REGULAR, this does NOT generate UIF or DMA requests.
+ *   3. Disable stale CHxDEN bits (in case a previous frame is still in-flight).
+ *   4. Reconfigure and enable the four DMA streams.
+ *   5. Enable CHxDEN so the next update event will fire the four DMA channels.
+ *   6. Set CNT = ARR.  When CEN=1 the very next clock overflows → update event
+ *      → DMA writes raw[0] into every CCR → first DShot bit begins.
+ *   7. Enable the timer.
+ */
+static void dshot_fire(void)
 {
-    const dshot_channel_t* cfg = &dshot_config[chan];
+    /* 1 – stop timer */
+    timer_disable(TIMER0);
 
-    dshot_pwm[chan].dma_trans_complete = 0;
+    /* Force CCR = 0 → outputs LOW while we set things up */
+    TIMER_CH0CV(TIMER0) = 0;
+    TIMER_CH1CV(TIMER0) = 0;
+    TIMER_CH2CV(TIMER0) = 0;
+    TIMER_CH3CV(TIMER0) = 0;
 
-    /* Configure DMA transfer */
-    dma_transfer_number_config(cfg->dma_periph, cfg->dma_channel, DSHOT_DMA_BUF_SIZE);
-    dma_memory_address_config(cfg->dma_periph, cfg->dma_channel, DMA_MEMORY_0, (uint32_t)dshot_pwm[chan].raw_buff);
-    dma_channel_enable(cfg->dma_periph, cfg->dma_channel);
+    /* 2 – UPG resets CNT to 0 and latches CCR=0, but no UIF/DMA (URS=1) */
+    timer_event_software_generate(TIMER0, TIMER_EVENT_SRC_UPG);
 
-    /* Configure timer DMA trigger source */
-    switch (cfg->tim_channel) {
-        case TIMER_CH_0:
-            timer_dma_enable(cfg->tim_periph, TIMER_DMA_CH0D);
-            break;
-        case TIMER_CH_1:
-            timer_dma_enable(cfg->tim_periph, TIMER_DMA_CH1D);
-            break;
-        case TIMER_CH_2:
-            timer_dma_enable(cfg->tim_periph, TIMER_DMA_CH2D);
-            break;
-        case TIMER_CH_3:
-            timer_dma_enable(cfg->tim_periph, TIMER_DMA_CH3D);
-            break;
+    /* 3 – make sure no channel-DMA enable bits are set */
+    timer_dma_disable(TIMER0, TIMER_DMA_CH0D);
+    timer_dma_disable(TIMER0, TIMER_DMA_CH1D);
+    timer_dma_disable(TIMER0, TIMER_DMA_CH2D);
+    timer_dma_disable(TIMER0, TIMER_DMA_CH3D);
+
+    /* 4 – (re)configure the four DMA streams */
+    dshot_dma_done_mask = 0;
+    for (uint8_t i = 0; i < MAX_PWM_OUT_CHAN; i++) {
+        dma_channel_enum dch = dshot_dma_map[i].dma_channel;
+
+        dma_channel_disable(DMA1, dch);
+        dma_interrupt_flag_clear(DMA1, dch, DMA_INT_FLAG_FTF);
+        dma_interrupt_flag_clear(DMA1, dch, DMA_INT_FLAG_HTF);
+        dma_interrupt_flag_clear(DMA1, dch, DMA_INT_FLAG_TAE);
+
+        dma_periph_address_config(DMA1, dch, dshot_dma_map[i].timer_ccr_addr);
+        dma_memory_address_config(DMA1, dch, DMA_MEMORY_0, (uint32_t)dshot_raw[i]);
+        dma_transfer_number_config(DMA1, dch, DSHOT_DMA_BUF_SIZE);
+        dma_interrupt_enable(DMA1, dch, DMA_CHXCTL_FTFIE);
+        dma_channel_enable(DMA1, dch);
     }
-    timer_channel_output_mode_config(cfg->tim_periph, cfg->tim_channel, TIMER_OC_MODE_PWM0);
-    timer_enable(cfg->tim_periph);
+
+    /* DSB: ensure all DMA register writes have been committed to the bus
+     * before we touch TIMER0 registers.  Without this barrier the CPU
+     * write-buffer may let the TIMER0 enables below take effect before the
+     * DMA channels are fully configured, causing some channels to miss the
+     * first update-event DMA request (release-build timing issue). */
+    __DSB();
+
+    /* Clear any pending update flag */
+    timer_flag_clear(TIMER0, TIMER_FLAG_UP);
+
+    /* 5 – arm the four channel-DMA enable bits */
+    timer_dma_enable(TIMER0, TIMER_DMA_CH0D);
+    timer_dma_enable(TIMER0, TIMER_DMA_CH1D);
+    timer_dma_enable(TIMER0, TIMER_DMA_CH2D);
+    timer_dma_enable(TIMER0, TIMER_DMA_CH3D);
+
+    /* 6 – pre-position counter just before overflow */
+    timer_counter_value_config(TIMER0, TIMER_CAR(TIMER0));
+
+    /* 7 – go!  Next clock → overflow → update → DMA writes raw[0] → first bit */
+    timer_enable(TIMER0);
 }
 #endif /* RT_USING_DSHOT */
 
@@ -623,6 +602,7 @@ static rt_err_t act_config(actuator_dev_t dev, const struct actuator_configure* 
         
         /* Configure PWM */
         pwm_gpio_init();
+        pwm_timer_init();
         
         /* Set PWM frequency */
         rt_err_t ret = __set_pwm_frequency(cfg->pwm_config.pwm_freq);
@@ -671,6 +651,7 @@ static rt_err_t act_control(actuator_dev_t dev, int cmd, void* arg)
             timer_enable(TIMER0);
             timer_enable(TIMER1);
             timer_enable(TIMER3);
+            // timer_enable(TIMER7);
         }
         break;
     case ACT_CMD_CHANNEL_DISABLE:
@@ -678,6 +659,7 @@ static rt_err_t act_control(actuator_dev_t dev, int cmd, void* arg)
         timer_disable(TIMER0);
         timer_disable(TIMER1);
         timer_disable(TIMER3);
+        // timer_disable(TIMER7);
         break;
     case ACT_CMD_SET_PROTOCOL:
         {
@@ -689,6 +671,13 @@ static rt_err_t act_control(actuator_dev_t dev, int cmd, void* arg)
                 return RT_EINVAL;
             }
         }
+#ifdef RT_USING_DSHOT
+    case ACT_CMD_DSHOT_SEND:
+        {
+            struct dshot_command* c = (struct dshot_command*)arg;
+            return act_write(dev, c->chan_mask, c->value, c->size) == c->size ? RT_EOK : RT_ERROR;
+        }
+#endif
     default:
         return RT_EINVAL;
     }
@@ -742,32 +731,20 @@ static rt_size_t act_write(actuator_dev_t dev, rt_uint16_t chan_sel, const rt_ui
         }
     } else if (__current_protocol == ACT_PROTOCOL_DSHOT) {
 #ifdef RT_USING_DSHOT
-        /* DShot output */
         bool telem_req = dev->config.dshot_config.telem_req;
-        
+
+        /* Fill DMA buffers for every requested channel */
         for (rt_size_t i = 0; i < size; i++) {
             if (chan_sel & (1 << i)) {
                 uint16_t val = *val_ptr;
-                
-                /* Handle DShot commands and throttle values */
-                if (val > 2047) {
-                    val = 2047;
-                }
-                
+                if (val > 2047) val = 2047;
                 dshot_prepare_dmabuffer(i, val, telem_req);
-                dshot_dma_start(i);
                 val_ptr++;
             }
         }
-        
-        /* Wait for all DMA transfers to complete */
-        for (rt_size_t i = 0; i < size; i++) {
-            if (chan_sel & (1 << i)) {
-                while (!dshot_pwm[i].dma_trans_complete) {
-                    /* Busy wait - in real applications, consider adding timeout */
-                }
-            }
-        }
+
+        /* Arm DMA and fire – non-blocking, ISR handles completion */
+        dshot_fire();
 #else
         return 0;
 #endif
@@ -780,3 +757,4 @@ rt_err_t drv_act_init(void)
 {
     return hal_actuator_register(&act_dev, "main_out", RT_DEVICE_FLAG_RDWR, NULL);
 }
+

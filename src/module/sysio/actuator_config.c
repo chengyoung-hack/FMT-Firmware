@@ -406,13 +406,23 @@ fmt_err_t actuator_toml_config(toml_table_t* table)
             act_pwm_drv_config* config = (act_pwm_drv_config*)DEVICE_LIST[i].config;
 
             act_dev->config.pwm_config.pwm_freq = config->freq;
+            act_dev->config.protocol = ACT_PROTOCOL_PWM;
         } else if (DEVICE_PROTOCOL_IS(i, dshot)) {
             act_dshot_drv_config* config = (act_dshot_drv_config*)DEVICE_LIST[i].config;
 
             act_dev->config.dshot_config.speed = config->speed;
             act_dev->config.dshot_config.telem_req = config->telem_req;
+            act_dev->config.protocol = ACT_PROTOCOL_DSHOT;
         } else {
             continue;
+        }
+
+        /* reconfigure device with new protocol */
+        if (act_dev->ops->act_config) {
+            if (act_dev->ops->act_config(act_dev, &act_dev->config) != RT_EOK) {
+                TOML_DBG_E("fail to config device %s\n", DEVICE_LIST[i].name);
+                return FMT_ERROR;
+            }
         }
 
         if (rt_device_open(&act_dev->parent, RT_DEVICE_OFLAG_RDWR) != RT_EOK) {

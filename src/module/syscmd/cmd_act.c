@@ -60,12 +60,9 @@ static rt_size_t act_device_write(actuator_dev_t act_dev, rt_uint16_t chan_sel, 
     /* Suspend controller output */
     mcn_suspend(MCN_HUB(control_output));
 
-    if (act_dev->config.protocol == ACT_PROTOCOL_PWM) {
-        ret = rt_device_write(&act_dev->parent, chan_sel, chan_val, size);
-    } else if (act_dev->config.protocol == ACT_PROTOCOL_DSHOT) {
+    if (act_dev->config.protocol == ACT_PROTOCOL_DSHOT) {
         printf("Press any key to stop...\n");
         while (1) {
-            /* type any key to exit */
             if (syscmd_has_input()) {
                 syscmd_flush();
                 break;
@@ -75,14 +72,12 @@ static rt_size_t act_device_write(actuator_dev_t act_dev, rt_uint16_t chan_sel, 
                 printf("dshot write failed!\n");
                 ret = 0;
                 break;
-                ;
             }
 
             systime_msleep(10);
         }
     } else {
-        /* Unknown protocol */
-        ret = 0;
+        ret = rt_device_write(&act_dev->parent, chan_sel, chan_val, size);
     }
 
     /* Resume controller output */
@@ -174,7 +169,7 @@ static int set(int argc, struct optparse options)
 
         for (int i = 0; i < 16; i++) {
             if (val < dev->range[0] || val > dev->range[1]) {
-                printf("Invalid value! The allowed range is [%d, %d]\n", dev->range[0], dev->range[1]);
+                printf("the allowed range is [%d, %d]\n", dev->range[0], dev->range[1]);
                 return EXIT_FAILURE;
             }
             chan_val[i] = val;
